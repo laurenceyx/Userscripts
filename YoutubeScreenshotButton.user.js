@@ -1,177 +1,218 @@
 // ==UserScript==
-// @name        Youtube Screenshot Button
-// @namespace   http://tampermonkey.net/
-// @match       https://www.youtube.com/*
-// @version     1.01
-// @author      LeKAKiD, Yukiteru
-// @description Add a screenshot button for YouTube. Originally created by LeKAKiD, modified by me.
-// @license     MIT
+// @name         YouTube Screenshot Button
+// @namespace    http://tampermonkey.net/
+// @version      2.0.0
+// @author       Yukiteru
+// @description  Adds a screenshot button to the YouTube player.
+// @license      MIT
+// @match        https://www.youtube.com/*
+// @grant        GM_log
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
 // ==/UserScript==
 
-function handleYTFrame() {
-  // Player elements
-  let settingButton = undefined;
-  let player = undefined;
-  let video = undefined;
-  const tooltip = {
-    element: undefined,
-    text: undefined,
-  };
+(function() {
+    'use strict';
 
-  // Initialize element;
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d", { alpha: false });
-  const anchor = document.createElement("a");
+    const LOG_PREFIX = '[YT Screenshot]';
+    const log = (msg) => GM_log(`${LOG_PREFIX} ${msg}`);
 
-  // Render buttons
-  const screenshotButton = document.createElement("button");
-  screenshotButton.classList.add("ytp-button");
-
-  // Create the SVG element. Can't use innerHTML due to security update
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("height", "100%");
-  svg.setAttribute("viewBox", "-4 -4 28 28");
-  svg.setAttribute("width", "100%");
-
-  // Path elements
-  const pathData = [
-    "M6.5 5C5.67157 5 5 5.67157 5 6.5V8.5C5 8.77614 5.22386 9 5.5 9C5.77614 9 6 8.77614 6 8.5V6.5C6 6.22386 6.22386 6 6.5 6H8.5C8.77614 6 9 5.77614 9 5.5C9 5.22386 8.77614 5 8.5 5H6.5Z",
-    "M11.5 5C11.2239 5 11 5.22386 11 5.5C11 5.77614 11.2239 6 11.5 6H13.5C13.7761 6 14 6.22386 14 6.5V8.5C14 8.77614 14.2239 9 14.5 9C14.7761 9 15 8.77614 15 8.5V6.5C15 5.67157 14.3284 5 13.5 5H11.5Z",
-    "M6 11.5C6 11.2239 5.77614 11 5.5 11C5.22386 11 5 11.2239 5 11.5V13.5C5 14.3284 5.67157 15 6.5 15H8.5C8.77614 15 9 14.7761 9 14.5C9 14.2239 8.77614 14 8.5 14H6.5C6.22386 14 6 13.7761 6 13.5V11.5Z",
-    "M15 11.5C15 11.2239 14.7761 11 14.5 11C14.2239 11 14 11.2239 14 11.5V13.5C14 13.7761 13.7761 14 13.5 14H11.5C11.2239 14 11 14.2239 11 14.5C11 14.7761 11.2239 15 11.5 15H13.5C14.3284 15 15 14.3284 15 13.5V11.5Z",
-    "M3 5C3 3.89543 3.89543 3 5 3H15C16.1046 3 17 3.89543 17 5V15C17 16.1046 16.1046 17 15 17H5C3.89543 17 3 16.1046 3 15V5ZM4 5V15C4 15.5523 4.44772 16 5 16H15C15.5523 16 16 15.5523 16 15V5C16 4.44772 15.5523 4 15 4H5C4.44772 4 4 4.44772 4 5Z"
-  ];
-
-  pathData.forEach(d => {
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", d);
-    path.setAttribute("fill", "#fff");
-    svg.appendChild(path);
-  });
-
-  // Append the SVG to the button
-  screenshotButton.appendChild(svg);
-
-  // Capture function
-  function capture() {
-    if (!video) return null;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    context.drawImage(video, 0, 0);
-    return new Promise(resolve => {
-      canvas.toBlob(blob => resolve(blob));
-    });
-  }
-
-  // Tooltip control
-  function showTooltip(text, referenceButton, withoutEvent) {
-    // Borrow existing button event for animation
-    if (!withoutEvent) settingButton.dispatchEvent(new MouseEvent("mouseover"));
-    if (!player) {
-      player = document.querySelector("#player:not(.skeleton)");
-      tooltip.element = document.querySelector(".ytp-tooltip-text-wrapper").parentElement;
-      tooltip.text = tooltip.element.querySelector(".ytp-tooltip-text");
-    }
-    tooltip.text.textContent = text;
-    tooltip.element.style.left = "0px";
-    const buttonRect = referenceButton.getBoundingClientRect();
-    const tooltipRect = tooltip.element.getBoundingClientRect();
-    const playerRect = player.getBoundingClientRect();
-    const buttonRelativePos = buttonRect.x - playerRect.x;
-    const buttonRelativeCenter = buttonRelativePos + buttonRect.width / 2;
-    const left = buttonRelativeCenter - tooltipRect.width / 2;
-    tooltip.element.style.left = `${left}px`;
-  }
-
-  function hideTooltip() {
-    // Borrow existing button event for animation
-    settingButton.dispatchEvent(new MouseEvent("mouseout"));
-  }
-
-  screenshotButton.addEventListener("click", async e => {
-    const blob = await capture();
-    if (!blob) return;
-
-    // copy image to clipboard
-    const item = new window.ClipboardItem({ [blob.type]: blob });
-    navigator.clipboard.write([item]);
-
-    // save image locally
-    const url = URL.createObjectURL(blob);
-    const ext = blob.type.split("/")[1];
-    const filename = getFilename(ext);
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  });
-
-  function detectUserLanguage() {
-    const language = navigator.language || navigator.userLanguage;
-    return language.split("-")[0];
-  }
-
-  function getTooltip() {
-    const language = detectUserLanguage();
-    const tooltipTexts = {
-      en: "Screenshot",
-      zh: "截图",
-      ja: "スクリーンショット",
-      ko: "스크린샷",
+    // 1 = Download Only, 2 = Copy to Clipboard, 3 = Both
+    const CONFIG = {
+        ACTION: GM_getValue('screenshot_action', 3) 
     };
 
-    return tooltipTexts[language];
-  }
+    const SVG_PATH = "M19.5,7h-3.14l-1.39-2H9.03L7.64,7H4.5C3.67,7,3,7.67,3,8.5v11C3,20.33,3.67,21,4.5,21h15c0.83,0,1.5-0.67,1.5-1.5v-11 C21,7.67,20.33,7,19.5,7z M19.5,19.5h-15v-11h4.05l1.83-2h3.24l1.83,2h4.05V19.5z M12,10.25c-2.07,0-3.75,1.68-3.75,3.75S9.93,17.75,12,17.75s3.75-1.68,3.75-3.75S14.07,10.25,12,10.25z M12,16.25 c-1.24,0-2.25-1.01-2.25-2.25s1.01-2.25,2.25-2.25s2.25,1.01,2.25,2.25S13.24,16.25,12,16.25z";
+    let currentSettingsBtn = null;
+    let menuCmdId = null;
 
-  screenshotButton.addEventListener("mouseover", () => {
-    const tooltip = getTooltip();
-    showTooltip(tooltip, screenshotButton);
-  });
-
-  screenshotButton.addEventListener("mouseout", () => {
-    hideTooltip();
-  });
-
-  // Observer
-  const observer = new MutationObserver(() => {
-    settingButton = document.querySelector(".ytp-right-controls > .ytp-settings-button");
-    if (settingButton) {
-      video = document.querySelector("video");
-      settingButton.insertAdjacentElement("beforebegin", screenshotButton);
-      observer.disconnect();
-      return;
+    function getTranslations() {
+        const lang = (navigator.language || 'en').split('-')[0];
+        const dict = { en: "Screenshot (s)", zh: "截图 (s)", ja: "スクリーンショット (s)", ko: "스크린샷 (s)" };
+        return dict[lang] || dict.en;
     }
-  });
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
-}
+    // Dynamic Tampermonkey menu
+    function setupMenu() {
+        const actionNames = {
+            1: 'Download Only',
+            2: 'Copy to Clipboard',
+            3: 'Download & Copy'
+        };
 
-function getFilename(ext) {
-  // can't use #title directly since there might be a mini player with a h1 element
-  const title = document
-    .querySelector(".ytd-watch-metadata")
-    .querySelector("#title")
-    .textContent.trim();
-  const time = new Date().toLocaleString().replaceAll("/", "-");
-  const progress = document.querySelector("video.video-stream").currentTime.toFixed(2);
-  return (filename = `${title} ${progress} ${time} screenshot.${ext}`);
-}
+        if (menuCmdId !== null) {
+            GM_unregisterMenuCommand(menuCmdId);
+        }
 
-const urlRegex = /https:\/\/(.+\.)?youtube\.com\/embed\/.+/;
-function addAllowClipboard() {
-  document.querySelectorAll("iframe").forEach(e => {
-    if (urlRegex.test(e.src) && e.allow.indexOf("clipboard-write") === -1) {
-      e.allow += "clipboard-write;";
-      e.src = e.src;
+        menuCmdId = GM_registerMenuCommand(`Action: ${actionNames[CONFIG.ACTION]}`, () => {
+            const promptText = "Select screenshot behavior:\n\n1 = Download Only\n2 = Copy to Clipboard\n3 = Download & Copy";
+            const newAction = prompt(promptText, CONFIG.ACTION);
+            
+            if (newAction && ['1', '2', '3'].includes(newAction.trim())) {
+                const parsedAction = parseInt(newAction.trim(), 10);
+                GM_setValue('screenshot_action', parsedAction);
+                CONFIG.ACTION = parsedAction;
+                setupMenu(); // Refresh menu UI instantly
+            } else if (newAction !== null) {
+                alert("Invalid input. Please enter 1, 2, or 3.");
+            }
+        });
     }
-  });
-}
 
-if (window.self === window.top) addAllowClipboard();
+    // Tooltip hijack to match YouTube native UI
+    function showNativeTooltip(text, referenceBtn) {
+        if (currentSettingsBtn) {
+            currentSettingsBtn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        }
 
-const ytRegex = /https:\/\/(.+\.)?youtube\.com(\/(embed|watch).+)?/;
-if (ytRegex.test(location.href)) handleYTFrame();
+        const tooltipEl = document.querySelector('.ytp-tooltip');
+        const textWrapper = document.querySelector('.ytp-tooltip-text-wrapper');
+        const player = document.querySelector('.html5-video-player');
+
+        if (tooltipEl && textWrapper && player) {
+            const textSpan = textWrapper.querySelector('.ytp-tooltip-text');
+            if (textSpan) {
+                textSpan.textContent = text;
+                const btnRect = referenceBtn.getBoundingClientRect();
+                const playerRect = player.getBoundingClientRect();
+                const tooltipRect = tooltipEl.getBoundingClientRect();
+                
+                const leftPos = (btnRect.left - playerRect.left) + (btnRect.width / 2) - (tooltipRect.width / 2);
+                tooltipEl.style.left = `${leftPos}px`;
+            }
+        }
+    }
+
+    function hideNativeTooltip() {
+        if (currentSettingsBtn) {
+            currentSettingsBtn.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+        }
+    }
+
+    function createButton() {
+        const btn = document.createElement('button');
+        btn.className = 'ytp-button';
+        btn.id = 'yt-custom-screenshot-btn';
+        btn.setAttribute('aria-label', getTranslations());
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '2 3 20 20'); // Centered & padded
+        svg.setAttribute('width', '24');
+        svg.setAttribute('height', '24');
+        svg.setAttribute('fill', 'white');
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', SVG_PATH);
+        
+        svg.appendChild(path);
+        btn.appendChild(svg);
+
+        btn.addEventListener('click', handleScreenshot);
+        btn.addEventListener('mouseover', () => showNativeTooltip(getTranslations(), btn));
+        btn.addEventListener('mouseout', hideNativeTooltip);
+
+        return btn;
+    }
+
+    async function handleScreenshot() {
+        const video = document.querySelector('video.video-stream');
+        if (!video) return log('Error: Video element not found.');
+
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d', { alpha: false }).drawImage(video, 0, 0);
+
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+            if (!blob) throw new Error('Failed to generate blob.');
+
+            if (CONFIG.ACTION === 2 || CONFIG.ACTION === 3) {
+                const clipItem = new window.ClipboardItem({ [blob.type]: blob });
+                await navigator.clipboard.write([clipItem]).catch(e => log(`Clipboard error: ${e}`));
+            }
+
+            if (CONFIG.ACTION === 1 || CONFIG.ACTION === 3) {
+                downloadBlob(blob);
+            }
+        } catch (err) {
+            log(`Capture failed: ${err}`);
+        }
+    }
+
+    function downloadBlob(blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = generateFilename('png');
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function generateFilename(ext) {
+        try {
+            const titleNode = document.querySelector('.ytd-watch-metadata #title') || document.querySelector('title');
+            const safeTitle = (titleNode ? titleNode.textContent.trim() : 'yt_video').replace(/[\\/:*?"<>|]/g, '_'); 
+            
+            const video = document.querySelector('video.video-stream');
+            const progress = video ? video.currentTime.toFixed(2) : '0.00';
+            
+            const d = new Date();
+            const timeStr = `${d.getFullYear()}${(d.getMonth()+1).toString().padStart(2,'0')}${d.getDate().toString().padStart(2,'0')}_${d.getHours().toString().padStart(2,'0')}${d.getMinutes().toString().padStart(2,'0')}${d.getSeconds().toString().padStart(2,'0')}`;
+            
+            return `${safeTitle}_${progress}s_${timeStr}.${ext}`;
+        } catch (e) {
+            return `screenshot_${Date.now()}.${ext}`;
+        }
+    }
+
+    function setupShortcut() {
+        document.addEventListener('keydown', (e) => {
+            const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+            const isTyping = activeTag === 'input' || activeTag === 'textarea' || (document.activeElement && document.activeElement.isContentEditable);
+            
+            if (!isTyping && e.key.toLowerCase() === 's') {
+                handleScreenshot();
+            }
+        });
+    }
+
+    function injectButton() {
+        if (document.getElementById('yt-custom-screenshot-btn')) return;
+
+        const settingsBtn = document.querySelector('.ytp-right-controls .ytp-settings-button') || 
+                            document.querySelector('.ytp-right-controls-left > .ytp-settings-button');
+        const video = document.querySelector('video.video-stream');
+
+        if (settingsBtn && video) {
+            currentSettingsBtn = settingsBtn;
+            settingsBtn.insertAdjacentElement('beforebegin', createButton());
+        }
+    }
+
+    // Bypass iframe clipboard restriction for embedded videos
+    function fixIframeClipboard() {
+        if (window.self !== window.top) return;
+        document.querySelectorAll('iframe').forEach(iframe => {
+            if (/youtube\.com\/embed/.test(iframe.src) && !iframe.allow.includes('clipboard-write')) {
+                iframe.allow += ' clipboard-write;';
+            }
+        });
+    }
+
+    function init() {
+        fixIframeClipboard();
+        setupMenu();
+        setupShortcut();
+
+        const observer = new MutationObserver(injectButton);
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    if (location.host.includes('youtube.com')) {
+        init();
+    }
+
+})();
