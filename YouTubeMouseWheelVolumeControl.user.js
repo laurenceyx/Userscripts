@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Mouse Wheel Volume Control
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Adjust YouTube volume by scrolling the mouse wheel over the player. Default step is 5, hold Alt for a step of 1.
 // @author       Yukiteru
 // @match        *://*.youtube.com/*
@@ -70,7 +70,15 @@
             return;
         }
 
-        // 2. Ignore if scrolling over the bottom controls
+        // Ignore if in fullscreen mode
+        const isFullscreen = document.fullscreenElement ||
+                             document.webkitFullscreenElement ||
+                             player.classList.contains('ytp-fullscreen');
+        if (isFullscreen) {
+            return;
+        }
+
+        //  Ignore if scrolling over the bottom controls (progress bar, buttons, etc.)
         if (e.target.closest('.ytp-chrome-bottom')) {
             return;
         }
